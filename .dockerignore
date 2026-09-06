@@ -1,0 +1,10 @@
+.env
+.git
+.venv
+__pycache__/
+*.py[cod]
+*.db
+*.mp4
+Database/
+input/
+output/

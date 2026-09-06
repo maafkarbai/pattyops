@@ -1,0 +1,34 @@
+name: pattyops-edge
+
+services:
+  inference:
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    command:
+      - python
+      - pattyops.py
+      - run
+      - --model
+      - /app/models/best.pt
+      - --source
+      - "0"
+      - --db
+      - /app/data/pattyops.db
+    devices:
+      - "/dev/video0:/dev/video0"
+    volumes:
+      - ./Database:/app/data
+      - ./models:/app/models:ro
+    restart: unless-stopped
+
+  sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    command: ["python", "edge_sync.py"]
+    env_file:
+      - ${PATTYOPS_EDGE_ENV_FILE:-.env.edge}
+    volumes:
+      - ./Database:/app/data
+    restart: unless-stopped

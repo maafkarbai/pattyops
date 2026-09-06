@@ -1,0 +1,41 @@
+name: pattyops-cloud
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - ${PATTYOPS_CLOUD_ENV_FILE:-.env.cloud}
+    volumes:
+      - pattyops-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  cloud-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.cloud
+    env_file:
+      - ${PATTYOPS_CLOUD_ENV_FILE:-.env.cloud}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  pattyops-postgres:

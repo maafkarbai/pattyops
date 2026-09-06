@@ -1,0 +1,36 @@
+# Secrets
+.env
+.env.cloud
+.env.edge
+
+# Python environments and caches
+.venv/
+.venv-train/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local databases
+Database/
+*.db
+*.db-*
+
+# Datasets and generated media
+datasets/
+input/
+output/
+runs/
+weights/
+models/
+*.mp4
+*.avi
+
+# Model artifacts
+*.pt
+*.onnx
+*.engine
+
+# Editor files
+.vscode/
