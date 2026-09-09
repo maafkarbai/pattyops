@@ -1,226 +1,153 @@
 [CmdletBinding()]
 param(
-    [Parameter()]
-    [string]$VideoFile,
+    [Alias('VideoFile')]
+    [string]$Source,
 
-    [Parameter()]
-    [string]$DatabaseFile,
+    [string]$Model = 'models\best.pt',
 
-    [Parameter()]
-    [string]$OutputFile,
+    [Alias('DatabaseFile')]
+    [string]$Database = 'Database\pattyops.db',
 
-    [Parameter()]
-    [switch]$NoBuild,
+    [Alias('OutputFile')]
+    [string]$SaveVideo,
 
-    [Parameter()]
-    [switch]$ValidateOnly,
+    [string]$ClassMap,
 
-    [Parameter()]
-    [ValidateRange(30, 600)]
-    [int]$DockerStartTimeoutSeconds = 120
+    [ValidateRange(0.01, 1.0)]
+    [double]$Confidence = 0.35,
+
+    [ValidateRange(0.01, 1.0)]
+    [double]$Iou = 0.5,
+
+    [switch]$NoDisplay,
+
+    [switch]$Setup,
+
+    [switch]$SetupOnly,
+
+    [switch]$ValidateOnly
 )
 
+$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
 
-function Assert-LeafName {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Value,
+$projectRoot = $PSScriptRoot
+Set-Location -LiteralPath $projectRoot
+$venvPython = Join-Path $projectRoot '.venv\Scripts\python.exe'
 
-        [Parameter(Mandatory)]
-        [string]$ParameterName
-    )
+function Get-AbsoluteProjectPath {
+    param([Parameter(Mandatory)][string]$Path)
 
-    if ([System.IO.Path]::GetFileName($Value) -ne $Value) {
-        throw "$ParameterName must be a filename without a directory: $Value"
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return [System.IO.Path]::GetFullPath($Path)
     }
+    return [System.IO.Path]::GetFullPath((Join-Path $projectRoot $Path))
 }
 
-function Invoke-Docker {
-    param(
-        [Parameter(Mandatory)]
-        [string[]]$Arguments
-    )
+function Initialize-VirtualEnvironment {
+    if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) {
+        $systemPython = Get-Command python -ErrorAction SilentlyContinue
+        if (-not $systemPython) {
+            throw 'Python was not found. Install Python 3.12 and run this script again.'
+        }
+        Write-Host 'Creating PattyOps virtual environment...'
+        & $systemPython.Source -m venv .venv
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Virtual environment creation failed.'
+        }
+    }
 
-    & docker @Arguments
+    Write-Host 'Installing local inference dependencies...'
+    & $venvPython -m pip install -r requirements.txt
     if ($LASTEXITCODE -ne 0) {
-        throw "docker $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+        throw 'Dependency installation failed.'
     }
 }
 
-function Test-DockerEngine {
-    $previousErrorActionPreference = $ErrorActionPreference
-
-    try {
-        $ErrorActionPreference = "SilentlyContinue"
-        & docker info --format "{{.ServerVersion}}" 2> $null | Out-Null
-        return $LASTEXITCODE -eq 0
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
+if ($Setup -or $SetupOnly -or -not (Test-Path -LiteralPath $venvPython -PathType Leaf)) {
+    Initialize-VirtualEnvironment
 }
 
-function Get-DotEnvValue {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Name,
-
-        [Parameter(Mandatory)]
-        [string]$DefaultValue
-    )
-
-    $match = Select-String `
-        -LiteralPath ".env" `
-        -Pattern "^$([regex]::Escape($Name))=(.*)$" |
-        Select-Object -Last 1
-
-    if (-not $match) {
-        return $DefaultValue
-    }
-
-    $value = $match.Matches[0].Groups[1].Value.Trim().Trim('"').Trim("'")
-    if ([string]::IsNullOrWhiteSpace($value)) {
-        return $DefaultValue
-    }
-
-    return $value
+if ($SetupOnly) {
+    Write-Host "PattyOps environment is ready: $venvPython"
+    return
 }
 
-$projectDirectory = $PSScriptRoot
-if (-not $projectDirectory) {
-    $projectDirectory = (Get-Location).Path
+$modelPath = Get-AbsoluteProjectPath -Path $Model
+if (-not (Test-Path -LiteralPath $modelPath -PathType Leaf)) {
+    throw "Local YOLO model not found: $modelPath"
 }
 
-Push-Location $projectDirectory
-
-try {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-        throw "Docker was not found. Install or start Docker Desktop first."
-    }
-
-    if (-not (Test-DockerEngine)) {
-        $dockerDesktopPath = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-
-        if (-not (Test-Path -LiteralPath $dockerDesktopPath -PathType Leaf)) {
-            throw "Docker Desktop is installed but its engine is not running."
-        }
-
-        Write-Host "Starting Docker Desktop..." -ForegroundColor Cyan
-        Start-Process -FilePath $dockerDesktopPath -WindowStyle Hidden
-
-        $deadline = (Get-Date).AddSeconds($DockerStartTimeoutSeconds)
-        while ((Get-Date) -lt $deadline -and -not (Test-DockerEngine)) {
-            Start-Sleep -Seconds 3
-        }
-
-        if (-not (Test-DockerEngine)) {
-            throw "Docker Desktop did not become ready within $DockerStartTimeoutSeconds seconds."
-        }
-
-        Write-Host "Docker Desktop is ready." -ForegroundColor Green
-    }
-
-    foreach ($requiredFile in @("compose.yaml", "Dockerfile", ".env")) {
-        if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
-            throw "Missing required file: $requiredFile"
-        }
-    }
-
-    $apiKeyConfigured = Select-String `
-        -LiteralPath ".env" `
-        -Pattern '^ROBOFLOW_API_KEY=(?!replace_with_your_key\s*$).+' `
-        -Quiet
-
-    if (-not $apiKeyConfigured) {
-        throw "ROBOFLOW_API_KEY is missing or still contains the placeholder in .env."
-    }
-
-    if ([string]::IsNullOrWhiteSpace($VideoFile)) {
-        $VideoFile = Get-DotEnvValue `
-            -Name "PATTYOPS_VIDEO_FILE" `
-            -DefaultValue "Patty3.mp4"
-    }
-
-    if ([string]::IsNullOrWhiteSpace($DatabaseFile)) {
-        $DatabaseFile = Get-DotEnvValue `
-            -Name "PATTYOPS_DATABASE_FILE" `
-            -DefaultValue "pattyops.db"
-    }
-
-    if ([string]::IsNullOrWhiteSpace($OutputFile)) {
-        $OutputFile = Get-DotEnvValue `
-            -Name "PATTYOPS_OUTPUT_FILE" `
-            -DefaultValue "pattyops_output.mp4"
-    }
-
-    Assert-LeafName -Value $VideoFile -ParameterName "VideoFile"
-    Assert-LeafName -Value $DatabaseFile -ParameterName "DatabaseFile"
-    Assert-LeafName -Value $OutputFile -ParameterName "OutputFile"
-
-    $videoPath = Join-Path "input" $VideoFile
-    if (-not (Test-Path -LiteralPath $videoPath -PathType Leaf)) {
-        throw "Input video not found: $videoPath"
-    }
-
-    New-Item -ItemType Directory -Force -Path "Database", "output" | Out-Null
-
-    $env:PATTYOPS_VIDEO_FILE = $VideoFile
-    $env:PATTYOPS_DATABASE_FILE = $DatabaseFile
-    $env:PATTYOPS_OUTPUT_FILE = $OutputFile
-
-    Write-Host "Video:    input\$VideoFile"
-    Write-Host "Database: Database\$DatabaseFile"
-    Write-Host "Output:   output\$OutputFile"
-    Write-Host "Validating PattyOps Docker configuration..." -ForegroundColor Cyan
-    Invoke-Docker -Arguments @("compose", "config", "--quiet")
-
+if ([string]::IsNullOrWhiteSpace($Source)) {
     if ($ValidateOnly) {
-        Write-Host "Validation passed. No containers were started." -ForegroundColor Green
+        Write-Host "Local model found: $modelPath"
+        Write-Host "Python environment found: $venvPython"
+        Write-Host 'Validation passed. No camera or video was opened.'
         return
     }
 
-    $upArguments = @(
-        "compose",
-        "up",
-        "--abort-on-container-exit",
-        "--exit-code-from",
-        "pattyops"
-    )
-
-    if (-not $NoBuild) {
-        $upArguments = @("compose", "up", "--build") + $upArguments[2..($upArguments.Count - 1)]
+    Write-Host 'Starting interactive local PattyOps setup...'
+    & $venvPython pattyops.py
+    if ($LASTEXITCODE -ne 0) {
+        throw "PattyOps exited with code $LASTEXITCODE."
     }
-
-    Write-Host "Starting PattyOps for input\$VideoFile..." -ForegroundColor Cyan
-
-    try {
-        Invoke-Docker -Arguments $upArguments
-    }
-    finally {
-        Write-Host "Cleaning up PattyOps containers..." -ForegroundColor DarkGray
-        & docker compose down --remove-orphans
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "Docker cleanup returned exit code $LASTEXITCODE."
-        }
-    }
-
-    $databasePath = Join-Path "Database" $DatabaseFile
-    $outputPath = Join-Path "output" $OutputFile
-
-    if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf)) {
-        throw "Processing finished but the database was not created: $databasePath"
-    }
-
-    if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
-        throw "Processing finished but the annotated video was not created: $outputPath"
-    }
-
-    Write-Host "PattyOps completed successfully." -ForegroundColor Green
-    Write-Host "Database: $((Resolve-Path -LiteralPath $databasePath).Path)"
-    Write-Host "Video:    $((Resolve-Path -LiteralPath $outputPath).Path)"
+    return
 }
-finally {
-    Pop-Location
+
+$sourceArgument = $Source
+$cameraSource = $Source -match '^(camera:)?\d+$'
+if (-not $cameraSource -and $Source -notmatch '^(https?|rtsp)://') {
+    $sourcePath = Get-AbsoluteProjectPath -Path $Source
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+        throw "Input video not found: $sourcePath"
+    }
+    $sourceArgument = $sourcePath
+}
+
+$databasePath = Get-AbsoluteProjectPath -Path $Database
+New-Item -ItemType Directory -Path (Split-Path -Parent $databasePath) -Force | Out-Null
+
+if ($ValidateOnly) {
+    Write-Host "Local model: $modelPath"
+    Write-Host "Source: $sourceArgument"
+    Write-Host "Database: $databasePath"
+    Write-Host 'Validation passed. Inference was not started.'
+    return
+}
+
+$arguments = @(
+    'pattyops.py'
+    'run'
+    '--model', $modelPath
+    '--source', $sourceArgument
+    '--db', $databasePath
+    '--confidence', $Confidence.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+    '--iou', $Iou.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+)
+
+if (-not $NoDisplay) {
+    $arguments += '--show'
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SaveVideo)) {
+    $outputPath = Get-AbsoluteProjectPath -Path $SaveVideo
+    New-Item -ItemType Directory -Path (Split-Path -Parent $outputPath) -Force | Out-Null
+    $arguments += @('--save-video', $outputPath)
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ClassMap)) {
+    $classMapPath = Get-AbsoluteProjectPath -Path $ClassMap
+    if (-not (Test-Path -LiteralPath $classMapPath -PathType Leaf)) {
+        throw "Class map not found: $classMapPath"
+    }
+    $arguments += @('--class-map', $classMapPath)
+}
+
+Write-Host 'Starting PattyOps with local YOLO inference...'
+Write-Host "  Model: $modelPath"
+Write-Host "  Source: $sourceArgument"
+Write-Host "  Database: $databasePath"
+& $venvPython @arguments
+if ($LASTEXITCODE -ne 0) {
+    throw "PattyOps exited with code $LASTEXITCODE."
 }

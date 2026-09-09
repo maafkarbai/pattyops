@@ -1,9 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# The inference server image already contains the matching Roboflow client,
-# WebRTC, OpenCV, and Python runtime. Docker reuses these layers for both
-# services instead of installing the vision stack twice.
-FROM roboflow/roboflow-inference-server-cpu:latest
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -11,6 +8,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pattyops_roboflow.py pattyops_core.py ./
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg libglib2.0-0 libgomp1 && \
+    rm -rf /var/lib/apt/lists/*
 
-ENTRYPOINT ["python", "-u", "pattyops_roboflow.py"]
+COPY requirements-docker.txt ./
+RUN python -m pip install --upgrade pip && \
+    python -m pip install -r requirements-docker.txt
+
+COPY pattyops.py pattyops_core.py ./
+
+ENTRYPOINT ["python", "pattyops.py"]

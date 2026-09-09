@@ -13,6 +13,8 @@ services:
       timeout: 5s
       retries: 12
     restart: unless-stopped
+    networks:
+      - pattyops-cloud
 
   cloud-api:
     build:
@@ -24,7 +26,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "${PATTYOPS_CLOUD_BIND_ADDRESS:-127.0.0.1}:${PATTYOPS_CLOUD_PORT:-8000}:8000"
     healthcheck:
       test:
         - CMD
@@ -36,6 +38,12 @@ services:
       retries: 12
       start_period: 10s
     restart: unless-stopped
+    networks:
+      - pattyops-cloud
 
 volumes:
   pattyops-postgres:
+
+networks:
+  pattyops-cloud:
+    name: pattyops-cloud

@@ -1,41 +1,29 @@
 name: pattyops
 
 services:
-  inference-server:
-    image: roboflow/roboflow-inference-server-cpu:latest
-    restart: unless-stopped
-    environment:
-      ALLOW_WORKFLOWS_FONTS_DOWNLOAD: "False"
-      ENABLE_STREAM_API: "True"
-      NUM_WORKERS: "1"
-    expose:
-      - "9001"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9001/"]
-      interval: 10s
-      timeout: 5s
-      retries: 18
-      start_period: 20s
-
   pattyops:
     build:
       context: .
       dockerfile: Dockerfile
-    depends_on:
-      inference-server:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      ROBOFLOW_API_URL: http://inference-server:9001
-      PATTYOPS_VIDEO_PATH: /app/input/${PATTYOPS_VIDEO_FILE:-Patty3.mp4}
-      PATTYOPS_DATABASE_PATH: /app/data/${PATTYOPS_DATABASE_FILE:-pattyops.db}
-      PATTYOPS_OUTPUT_PATH: /app/output/${PATTYOPS_OUTPUT_FILE:-pattyops_output.mp4}
-      PATTYOPS_OUTPUT_DIR: /app/output
-      PATTYOPS_SHOW_GUI: "false"
-      PATTYOPS_REALTIME_PROCESSING: "false"
+    command:
+      - run
+      - --model
+      - /app/models/${PATTYOPS_MODEL_FILE:-best.pt}
+      - --source
+      - /app/input/${PATTYOPS_VIDEO_FILE:-Patty3.mp4}
+      - --db
+      - /app/data/${PATTYOPS_DATABASE_FILE:-pattyops.db}
+      - --save-video
+      - /app/output/${PATTYOPS_OUTPUT_FILE:-pattyops_output.mp4}
+      - --tracker
+      - ${PATTYOPS_TRACKER:-botsort.yaml}
+      - --confidence
+      - ${PATTYOPS_CONFIDENCE:-0.35}
+      - --iou
+      - ${PATTYOPS_IOU:-0.5}
     volumes:
       - ./input:/app/input:ro
       - ./Database:/app/data
+      - ./models:/app/models:ro
       - ./output:/app/output
     restart: "no"

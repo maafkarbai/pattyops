@@ -2,7 +2,16 @@
 
 PattyOps is a computer vision application that tracks burger patties in camera feeds or recorded video and records changes in their visible cooking state. It converts detections into structured lifecycle events that can support operational reviews, process analysis, and future reporting integrations.
 
-The repository includes local inference, a Roboflow video-processing workflow, and an edge-to-cloud synchronization service. The sections below provide a project overview for delivery teams and practical setup guidance for technical contributors.
+The repository uses local Ultralytics inference and an edge-to-cloud synchronization service. Roboflow is used only to annotate and export training data; deployed PattyOps processes do not call Roboflow.
+
+## Project implementation guidelines
+
+- **Roboflow is annotation-only.** Use it to label images, manage dataset versions, and export a YOLO-format dataset. Do not add Roboflow inference servers, SDKs, API keys, hosted workflows, or network calls to the PattyOps runtime.
+- **Inference must remain local.** Train with the exported dataset, deploy the resulting checkpoint as `models/best.pt`, and run detection and BoT-SORT tracking through Ultralytics on the kitchen device. Runtime inference must continue without an internet connection.
+- **Bun is the project package manager and command interface.** Use `bun install --frozen-lockfile` and the scripts in `package.json`. Commit `package.json` and `bun.lock`; do not introduce npm, Yarn, or pnpm lockfiles.
+- **Keep Python isolated.** Bun orchestrates the project, while Ultralytics, OpenCV, FastAPI, and other Python packages stay in `.venv` and are declared in the appropriate `requirements*.txt` files. Do not install Python dependencies globally.
+- **Keep runtime data out of source control.** Do not commit credentials, `.env` files, model weights, datasets, videos, SQLite databases, or generated output. Transfer deployment credentials and `models/best.pt` separately through approved secure storage.
+- **Verify before handoff.** Run `bun run validate`, `bun run test`, and `bun run docker:validate` after relevant changes. Validate model behavior on representative unseen kitchen footage before treating event output as operationally reliable.
 
 ## Project overview
 
@@ -16,7 +25,7 @@ Current capabilities include:
 - Tracking individual patties and smoothing observations to reduce changes caused by noisy detections.
 - Logging cooking sessions, patty records, and lifecycle events.
 - Displaying live annotations and optionally saving annotated video.
-- Processing video through a containerized Roboflow workflow.
+- Processing recorded video in Docker with the local trained checkpoint.
 - Sending local events and device heartbeats to an authenticated cloud API, with retries and duplicate protection.
 
 The repository provides processing and data services. A project management dashboard, business reporting interface, and automated kitchen controls are outside the current implementation.
@@ -70,25 +79,25 @@ Ultralytics inference + BoT-SORT tracking
 Lifecycle smoothing -> SQLite -> Edge synchronizer -> HTTPS API -> PostgreSQL
 ```
 
-The Roboflow path uses a local inference-server container and its own detection stabilization, then writes lifecycle events through the shared core.
+Roboflow sits outside the runtime architecture. Annotated datasets are exported in YOLO format, trained locally, and the resulting `best.pt` checkpoint is installed at `models/best.pt`.
 
 | Mode | Suitable use | Entry point | Requirements |
 | --- | --- | --- | --- |
 | Native Python | Camera trials, local development, and model evaluation | `pattyops.py` | Python, trained `.pt` checkpoint, camera or video |
-| Roboflow with Docker | Repeatable recorded-video processing | `run-pattyops.ps1` / `compose.yaml` | Docker Compose, Roboflow credentials and workflow, input video |
+| Local-model Docker | Repeatable recorded-video processing | `compose.yaml` | Docker Compose, trained `.pt` checkpoint, input video |
 | Edge + cloud | Kitchen inference with centralized event storage | `compose.edge.yaml` and `compose.cloud.yaml` | Linux camera host, trained model, device credentials, cloud API and PostgreSQL |
 
 Use native Python for initial Windows webcam testing. The edge Compose configuration expects a Linux camera device at `/dev/video0`.
 
 ## Quick start: native Python
 
-Run the following commands from the repository root in PowerShell. Python 3.12 is a practical starting point, matching the edge and cloud container images.
+Run the following commands from the repository root in PowerShell. Bun is the project package manager and task runner. Python 3.12 remains the runtime for Ultralytics and matches the edge and cloud container images.
 
 ### 1. Prepare the environment
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+bun install --frozen-lockfile
+bun run setup
 ```
 
 Obtain a trained Ultralytics checkpoint for the patty classes and place it at `models/best.pt`, or use its existing location. Model weights, datasets, and input videos are excluded from version control and must be supplied separately.
@@ -98,19 +107,19 @@ Obtain a trained Ultralytics checkpoint for the patty classes and place it at `m
 To use the interactive setup, which prompts for the source, model, and database:
 
 ```powershell
-.\.venv\Scripts\python.exe pattyops.py
+bun run start
 ```
 
 To run the default webcam directly:
 
 ```powershell
-.\.venv\Scripts\python.exe pattyops.py run --model models/best.pt --source 0 --db Database/pattyops.db --show
+bun run webcam
 ```
 
 To process a video and save an annotated copy:
 
 ```powershell
-.\.venv\Scripts\python.exe pattyops.py run --model models/best.pt --source input/sample.mp4 --db Database/pattyops.db --save-video output/sample_annotated.mp4
+bun run video
 ```
 
 Replace the example paths with your files. Press `q` in the live display to end a session cleanly.
@@ -118,7 +127,7 @@ Replace the example paths with your files. Press `q` in the live display to end 
 ### 3. Review the events
 
 ```powershell
-.\.venv\Scripts\python.exe pattyops.py events --db Database/pattyops.db --limit 100
+bun run events
 ```
 
 The default database is `pattyops.db` in the working directory when `--db` is omitted. Use the same database path when running inference and reviewing events.
@@ -126,14 +135,14 @@ The default database is `pattyops.db` in the working directory when `--db` is om
 ## Alternative setup guides
 
 - [Local inference and configuration](README.pattyops.md): interactive setup, source selection, class mappings, and smoothing.
-- [Roboflow Docker processing](README.Docker.md): environment configuration, video processing, validation, and output locations.
+- [Local-model Docker processing](README.Docker.md): headless video processing with `models/best.pt` and no external inference service.
 - [Edge and cloud deployment](README.Production.md): cloud startup, device authentication, synchronization, and Ubuntu camera deployment.
 
 The configuration templates serve separate purposes:
 
 | Template | Local configuration file | Purpose |
 | --- | --- | --- |
-| `.env.example` | `.env` | Roboflow credentials, workflow identifiers, and processing filenames |
+| `.env.example` | `.env` | Local model, video, output, tracker, and confidence settings for Docker processing |
 | `.env.edge.example` | `.env.edge` | SQLite path, cloud URL, device credentials, and synchronization settings |
 | `.env.cloud.example` | `.env.cloud` | PostgreSQL connection settings and authorized device tokens |
 
@@ -187,28 +196,28 @@ All endpoints except `/healthz` require `Authorization: Bearer <token>` and `X-D
 | --- | --- |
 | `pattyops.py` | Native CLI, interactive setup, inference, and video display/output |
 | `pattyops_core.py` | Shared lifecycle logic, smoothing, and SQLite persistence |
-| `pattyops_roboflow.py` | Roboflow workflow integration and annotated video processing |
 | `edge_sync.py` | Event delivery, heartbeats, retries, and checkpoints |
 | `cloud_api.py` | FastAPI application, authentication, and cloud persistence |
 | `prepare_yolo_detection_dataset.py` | Prepare detection datasets, including polygon-to-box conversion |
-| `run-pattyops.ps1` | Windows launcher and configuration validation for Roboflow Docker processing |
+| `run-pattyops.ps1` | Windows launcher for local YOLO video or webcam inference |
+| `package.json`, `bun.lock` | Bun version, reproducible JavaScript metadata, and project task commands |
+| `configure-deployment.ps1` | Generate private cloud/edge credentials and install the trained model checkpoint |
+| `deploy-local.ps1`, `stop-local-deployment.ps1` | Start, verify, and stop the local PostgreSQL + cloud API deployment |
 | `Dockerfile*`, `compose*.yaml` | Container images and service definitions for each operating mode |
-| `requirements*.txt` | Dependencies for native, Roboflow Docker, edge, and cloud environments |
+| `requirements*.txt` | Dependencies for native, local-model Docker, edge, and cloud environments |
 | `test_*.py` | Lifecycle, synchronization, API, and event-delivery tests |
 
 ## Verification and maintenance
 
-The lifecycle and synchronization unit tests use Python's standard library:
+Install the locked Bun metadata and the isolated Python requirements, then run
+the standard project checks:
 
 ```powershell
-python -m unittest -v test_pattyops.py test_edge_sync.py
-```
-
-To run all four test modules in a virtual environment:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-cloud.txt
-.\.venv\Scripts\python.exe -m unittest -v test_pattyops.py test_edge_sync.py test_cloud_api.py test_production_flow.py
+bun install --frozen-lockfile
+bun run setup
+bun run validate
+bun run test
+bun run docker:validate
 ```
 
 The API and event-delivery tests use temporary SQLite databases and an in-process API client. They do not require a running cloud deployment, camera, or trained model, and do not establish real-world detection accuracy or PostgreSQL deployment readiness.
@@ -224,4 +233,4 @@ When changing a model or class mapping, review annotated footage and event outpu
 | False flips or premature removals | Review detector output, tracking continuity, smoothing settings, and the removal grace period. |
 | No events appear in the listing | Confirm the database path matches the inference run and the model labels map to supported lifecycle states. |
 | Events do not reach the cloud | Check synchronizer logs, database path, API reachability, and matching device ID/token values. |
-| Roboflow processing fails to start | Check Docker availability, input filenames, and `.env` values; run `./run-pattyops.ps1 -ValidateOnly`. |
+| Docker video processing fails to start | Check Docker availability, `models/best.pt`, the input filename, and `.env`; run `docker compose config --quiet`. |

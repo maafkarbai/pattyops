@@ -1,21 +1,17 @@
-# PattyOps Docker deployment
+# PattyOps local-model Docker processing
 
-This deployment runs two containers that share the cached Roboflow image
-layers:
-
-1. `inference-server`: the Roboflow CPU inference server.
-2. `pattyops`: the video processor and SQLite lifecycle-event logger.
+This Docker mode runs the trained Ultralytics checkpoint entirely on the local
+machine. It does not call Roboflow or require an API key. Roboflow is used only
+outside this runtime to annotate and export the dataset.
 
 ## Files and folders
 
-Place the input video in `input/`. PattyOps writes the persistent SQLite file
-to `Database/` and the annotated video to `output/`.
+Place the model and input video in the mounted folders. PattyOps writes its
+SQLite log and annotated video to persistent host folders.
 
 ```text
 PattyOps/
-|-- Dockerfile
-|-- compose.yaml
-|-- .env
+|-- models/best.pt
 |-- input/Patty3.mp4
 |-- Database/pattyops.db
 `-- output/pattyops_output.mp4
@@ -23,61 +19,39 @@ PattyOps/
 
 ## Configure
 
-Copy `.env.example` to `.env`, then replace `replace_with_your_key` with the
-Roboflow API key. Never commit or send the real `.env` file.
+Copy `.env.example` to `.env` and select the filenames. No credentials belong
+in this file.
 
-To process a different video, copy it into `input/` and update
-`PATTYOPS_VIDEO_FILE` in `.env`. When no filenames are passed to the runner,
-it automatically uses the video, database, and output names from `.env`.
+```powershell
+Copy-Item .env.example .env
+```
+
+The defaults select BoT-SORT with a confidence threshold of `0.35` and an IoU
+threshold of `0.5`.
 
 ## Run
 
-From PowerShell in this folder:
+Recorded-video processing in Docker is headless:
 
 ```powershell
-./run-pattyops.ps1
+bun run docker:validate
+bun run docker:video
+bun run docker:down
 ```
 
-If PowerShell's execution policy blocks local scripts:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\run-pattyops.ps1
-```
-
-Validate without starting containers:
-
-```powershell
-./run-pattyops.ps1 -ValidateOnly
-```
-
-Choose different filenames without editing Compose:
-
-```powershell
-./run-pattyops.ps1 `
-    -VideoFile "Patty5.mp4" `
-    -DatabaseFile "patty5.db" `
-    -OutputFile "patty5_annotated.mp4"
-```
-
-The equivalent manual commands are:
-
-```powershell
-docker compose config
-docker compose up --build --abort-on-container-exit --exit-code-from pattyops
-```
-
-The first build can take several minutes. When processing completes, inspect:
+When processing completes, inspect:
 
 ```text
 Database\pattyops.db
 output\pattyops_output.mp4
 ```
 
-Stop and remove the containers without removing your bind-mounted results:
+For a webcam on Windows, use the native runner because Docker Desktop does not
+pass a Windows camera through as `/dev/video0`:
 
 ```powershell
-docker compose down
+bun run webcam
 ```
 
-SQLite is configured as a single-writer log. Do not scale the `pattyops`
-service to multiple replicas that write to the same database file.
+SQLite is a single-writer log. Do not run multiple inference containers against
+the same database file.

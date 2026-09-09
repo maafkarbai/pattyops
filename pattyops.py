@@ -145,7 +145,12 @@ def interactive_arguments() -> list[str]:
         else:
             print("Enter 1 for video or 2 for webcam.")
 
-    default_model = _first_matching_file(Path.cwd(), ("best.pt", "*.pt"))
+    deployed_model = Path.cwd() / "models" / "best.pt"
+    default_model = (
+        deployed_model
+        if deployed_model.is_file()
+        else _first_matching_file(Path.cwd(), ("best.pt", "*.pt"))
+    )
     while True:
         model = _prompt(
             "Ultralytics model (.pt)",

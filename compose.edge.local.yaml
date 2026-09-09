@@ -1,0 +1,13 @@
+name: pattyops-edge
+
+# Local override: lets the sync container reach the cloud API without exposing
+# PostgreSQL or binding the API to every host network interface.
+services:
+  sync:
+    networks:
+      - pattyops-cloud
+
+networks:
+  pattyops-cloud:
+    external: true
+    name: pattyops-cloud

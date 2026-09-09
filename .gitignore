@@ -2,6 +2,8 @@
 .env
 .env.cloud
 .env.edge
+.env.edge.host
+.env.roboflow-annotation
 
 # Python environments and caches
 .venv/
@@ -11,6 +13,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Bun / JavaScript dependencies
+node_modules/
 
 # Local databases
 Database/
