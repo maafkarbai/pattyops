@@ -11,14 +11,16 @@
     "webcam": "powershell -NoProfile -ExecutionPolicy Bypass -File ./run-pattyops.ps1 -Source 0",
     "video": "powershell -NoProfile -ExecutionPolicy Bypass -File ./run-pattyops.ps1 -Source input/Patty4.mp4 -SaveVideo output/Patty4-annotated.mp4",
     "events": ".venv/Scripts/python.exe pattyops.py events --db Database/pattyops.db --limit 100",
-    "test": ".venv/Scripts/python.exe -m unittest -v test_pattyops.py test_cloud_api.py test_edge_sync.py test_production_flow.py",
+    "test": ".venv/Scripts/python.exe -m unittest -v test_pattyops.py test_cloud_api.py test_edge_sync.py test_production_flow.py test_kitchen_app.py",
     "docker:validate": "docker compose config --quiet",
     "docker:video": "docker compose up --build --abort-on-container-exit --exit-code-from pattyops",
     "docker:down": "docker compose down --remove-orphans",
     "deploy:configure": "powershell -NoProfile -ExecutionPolicy Bypass -File ./configure-deployment.ps1",
     "deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy-local.ps1",
     "deploy:sync": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy-local.ps1 -SkipBuild -SyncOnce",
-    "deploy:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File ./stop-local-deployment.ps1"
+    "deploy:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File ./stop-local-deployment.ps1",
+    "desktop": "wscript.exe \"Open PattyOps.vbs\"",
+    "desktop:build": "powershell -NoProfile -ExecutionPolicy Bypass -File ./build-kitchen.ps1"
   },
   "engines": {
     "bun": ">=1.1.42"

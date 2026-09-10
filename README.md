@@ -28,7 +28,7 @@ Current capabilities include:
 - Processing recorded video in Docker with the local trained checkpoint.
 - Sending local events and device heartbeats to an authenticated cloud API, with retries and duplicate protection.
 
-The repository provides processing and data services. A project management dashboard, business reporting interface, and automated kitchen controls are outside the current implementation.
+The repository provides processing and data services plus a Windows kitchen GUI. Advanced business reporting and automated kitchen controls are outside the current implementation.
 
 ### How the workflow operates
 
@@ -88,6 +88,10 @@ Roboflow sits outside the runtime architecture. Annotated datasets are exported 
 | Edge + cloud | Kitchen inference with centralized event storage | `compose.edge.yaml` and `compose.cloud.yaml` | Linux camera host, trained model, device credentials, cloud API and PostgreSQL |
 
 Use native Python for initial Windows webcam testing. The edge Compose configuration expects a Linux camera device at `/dev/video0`.
+
+## Kitchen staff: Windows desktop app
+
+Use the graphical installer and desktop shortcut described in [Kitchen setup and daily use](README.Kitchen.md). The app provides camera Start/Stop, a live preview, read-only local records, cloud event history, CSV export, and local support logs. The commands below are for maintainers and development.
 
 ## Quick start: native Python
 

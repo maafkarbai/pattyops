@@ -11,6 +11,10 @@ USB webcam -> edge inference -> SQLite -> edge sync -> HTTPS cloud API -> Postgr
 Raw webcam video stays in the kitchen. The cloud API receives lifecycle events,
 not a continuous camera stream.
 
+## Windows kitchen installation
+
+For nontechnical kitchen staff, use [the graphical desktop installer and guide](README.Kitchen.md). The instructions below are for deployment owners provisioning the cloud and alternative container deployments.
+
 ## 1. Test the webcam on Windows
 
 Use the native Python runner for the first camera and model test:

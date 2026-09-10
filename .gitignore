@@ -39,3 +39,7 @@ models/
 
 # Editor files
 .vscode/
+
+# Desktop build output
+build/
+dist/

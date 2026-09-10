@@ -297,12 +297,18 @@ def create_app(
     @application.get("/v1/events", response_model=list[EventResponse])
     def list_events(
         limit: int = Query(default=100, ge=1, le=1000),
+        before_id: int | None = Query(default=None, ge=1),
+        event_type: Literal["DETECTED", "STATE_CHANGED", "FLIPPED", "REMOVED"] | None = None,
         device_id: str = Depends(authenticated_device),
         session: Session = Depends(database_session),
     ) -> list[EventResponse]:
+        query = select(CloudEvent).where(CloudEvent.device_id == device_id)
+        if before_id is not None:
+            query = query.where(CloudEvent.id < before_id)
+        if event_type is not None:
+            query = query.where(CloudEvent.event_type == event_type)
         rows = session.scalars(
-            select(CloudEvent)
-            .where(CloudEvent.device_id == device_id)
+            query
             .order_by(CloudEvent.id.desc())
             .limit(limit)
         ).all()

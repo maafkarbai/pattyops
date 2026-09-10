@@ -187,7 +187,7 @@ def interactive_arguments() -> list[str]:
     return arguments
 
 
-def run_tracking(args: argparse.Namespace) -> int:
+def run_tracking(args: argparse.Namespace, stop_event=None, on_frame=None) -> int:
     try:
         import cv2
         from ultralytics import YOLO
@@ -251,6 +251,8 @@ def run_tracking(args: argparse.Namespace) -> int:
             verbose=False,
         )
         for frame_index, result in enumerate(results):
+            if stop_event is not None and stop_event.is_set():
+                break
             last_video_seconds = (
                 time.monotonic() - started_monotonic
                 if isinstance(source, int)
@@ -279,9 +281,11 @@ def run_tracking(args: argparse.Namespace) -> int:
             ):
                 print(event_line(event), flush=True)
 
-            if args.show or args.save_video:
+            if args.show or args.save_video or on_frame is not None:
                 annotated = result.plot()
                 draw_run_status(cv2, annotated, source)
+                if on_frame is not None:
+                    on_frame(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB))
                 if args.save_video and writer is None:
                     height, width = annotated.shape[:2]
                     output_path = Path(args.save_video).expanduser().resolve()
@@ -306,6 +310,12 @@ def run_tracking(args: argparse.Namespace) -> int:
         status = "FAILED"
         raise
     finally:
+        if 'results' in locals():
+            results.close()
+        predictor = getattr(model, 'predictor', None)
+        for capture in getattr(getattr(predictor, 'dataset', None), 'caps', []):
+            if capture is not None:
+                capture.release()
         for event in manager.finalize(last_video_seconds):
             print(event_line(event), flush=True)
         database.finish_session(session_id, status=status)
