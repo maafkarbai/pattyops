@@ -4,6 +4,7 @@
 .env.edge
 .env.edge.host
 .env.roboflow-annotation
+.fakecloud/
 
 # Python environments and caches
 .venv/
