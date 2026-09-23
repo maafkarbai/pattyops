@@ -1,5 +1,7 @@
 # PattyOps
 
+<img src="assets/PattyOpsWhiteBG.png" alt="PattyOps logo" width="240">
+
 PattyOps is a computer vision application that tracks burger patties in camera feeds or recorded video and records changes in their visible cooking state. It converts detections into structured lifecycle events that can support operational reviews, process analysis, and future reporting integrations.
 
 The repository uses local Ultralytics inference and an edge-to-cloud synchronization service. Roboflow is used only to annotate and export training data; deployed PattyOps processes do not call Roboflow.
